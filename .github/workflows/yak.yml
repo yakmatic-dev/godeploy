@@ -1,4 +1,4 @@
-name: Go CI/CD with PM2.
+name: Go CI/CD with PM2
 
 on:
   push:
@@ -63,19 +63,16 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      # Build binary (stable output path)
       - name: Build binary
         run: |
           mkdir -p dist
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
           go build -o dist/${{ env.BINARY_NAME }} ./cmd/api
 
-      # Package artifact (fixed name)
       - name: Create archive
         run: |
           tar -czf go-app.tar.gz -C dist ${{ env.BINARY_NAME }}
 
-      # Upload artifact (stable name)
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -84,7 +81,7 @@ jobs:
 
 
   # =========================
-  # 3. DEPLOY (PM2)
+  # 3. DEPLOY (PM2 via SSH PASSWORD)
   # =========================
   deploy:
     name: Deploy to Server (PM2)
@@ -92,37 +89,32 @@ jobs:
     needs: build
 
     steps:
-      # Download artifact
+
       - name: Download Artifact
         uses: actions/download-artifact@v4
         with:
           name: go-app
 
-      # Verify download
       - name: Debug files
         run: ls -lh
 
-      # Set known filename
-      - name: Set artifact filename
-        run: echo "FILE=go-app.tar.gz" >> $GITHUB_ENV
-
-      # Copy to server
       - name: Copy Artifact to Server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT }}
           source: "go-app.tar.gz"
           target: "/tmp"
 
-      # Deploy via SSH + PM2
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT }}
           script: |
             set -e
 
