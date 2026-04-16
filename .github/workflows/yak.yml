@@ -1,4 +1,4 @@
-name: Go CI/CD with PM2
+name: Go CI/CD with PM2.
 
 on:
   push:
@@ -45,6 +45,7 @@ jobs:
       - name: Run tests
         run: go test ./... -v
 
+
   # =========================
   # 2. BUILD
   # =========================
@@ -62,27 +63,28 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      # Build binary (stable output path)
       - name: Build binary
         run: |
           mkdir -p dist
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
           go build -o dist/${{ env.BINARY_NAME }} ./cmd/api
 
-      - name: Package artifact
+      # Package artifact (fixed name)
+      - name: Create archive
         run: |
-          FILE=${{ env.APP_NAME }}-${GITHUB_RUN_NUMBER}.tar.gz
-          tar -czf $FILE -C dist ${{ env.BINARY_NAME }}
-          echo "FILE=$FILE" >> $GITHUB_ENV
-          ls -lh
+          tar -czf go-app.tar.gz -C dist ${{ env.BINARY_NAME }}
 
+      # Upload artifact (stable name)
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: go-app
-          path: ${{ env.FILE }}
+          path: go-app.tar.gz
+
 
   # =========================
-  # 3. DEPLOY WITH PM2
+  # 3. DEPLOY (PM2)
   # =========================
   deploy:
     name: Deploy to Server (PM2)
@@ -90,28 +92,31 @@ jobs:
     needs: build
 
     steps:
+      # Download artifact
       - name: Download Artifact
         uses: actions/download-artifact@v4
         with:
           name: go-app
 
-      - name: Debug downloaded files
+      # Verify download
+      - name: Debug files
         run: ls -lh
 
+      # Set known filename
       - name: Set artifact filename
-        run: |
-          FILE=$(ls *.tar.gz | head -n 1)
-          echo "FILE=$FILE" >> $GITHUB_ENV
+        run: echo "FILE=go-app.tar.gz" >> $GITHUB_ENV
 
+      # Copy to server
       - name: Copy Artifact to Server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "${{ env.FILE }}"
+          source: "go-app.tar.gz"
           target: "/tmp"
 
+      # Deploy via SSH + PM2
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -125,21 +130,18 @@ jobs:
             sudo mkdir -p ${{ env.DEPLOY_DIR }}
 
             echo "Extracting artifact..."
-            sudo tar -xzf /tmp/${{ env.FILE }} -C ${{ env.DEPLOY_DIR }}
+            sudo tar -xzf /tmp/go-app.tar.gz -C ${{ env.DEPLOY_DIR }}
 
             echo "Setting permissions..."
             sudo chmod +x ${{ env.DEPLOY_DIR }}/${{ env.BINARY_NAME }}
             sudo chown -R $USER:$USER ${{ env.DEPLOY_DIR }}
 
-            echo "Starting or restarting PM2 process..."
-            if pm2 describe ${{ env.APP_NAME }} > /dev/null; then
+            echo "Starting or restarting PM2..."
+            if pm2 describe ${{ env.APP_NAME }} > /dev/null 2>&1; then
               pm2 restart ${{ env.APP_NAME }}
             else
               pm2 start ${{ env.DEPLOY_DIR }}/${{ env.BINARY_NAME }} --name ${{ env.APP_NAME }}
             fi
 
-            echo "Saving PM2..."
             pm2 save
-
-            echo "Deployment complete"
             pm2 status
