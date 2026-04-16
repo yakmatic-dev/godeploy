@@ -62,21 +62,24 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Build
+      - name: Build binary
         run: |
           mkdir -p dist
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-          go build -o dist/${BINARY_NAME} ./cmd/api
+          go build -o dist/${{ env.BINARY_NAME }} ./cmd/api
 
-      - name: Package
+      - name: Package artifact
         run: |
-          tar -czf ${APP_NAME}.tar.gz -C dist ${BINARY_NAME}
+          FILE=${{ env.APP_NAME }}-${GITHUB_RUN_NUMBER}.tar.gz
+          tar -czf $FILE -C dist ${{ env.BINARY_NAME }}
+          echo "FILE=$FILE" >> $GITHUB_ENV
+          ls -lh
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: go-app
-          path: ${APP_NAME}.tar.gz
+          path: ${{ env.FILE }}
 
   # =========================
   # 3. DEPLOY WITH PM2
@@ -92,13 +95,21 @@ jobs:
         with:
           name: go-app
 
+      - name: Debug downloaded files
+        run: ls -lh
+
+      - name: Set artifact filename
+        run: |
+          FILE=$(ls *.tar.gz | head -n 1)
+          echo "FILE=$FILE" >> $GITHUB_ENV
+
       - name: Copy Artifact to Server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "${APP_NAME}.tar.gz"
+          source: "${{ env.FILE }}"
           target: "/tmp"
 
       - name: Deploy via SSH
@@ -111,25 +122,21 @@ jobs:
             set -e
 
             echo "Creating deploy directory..."
-            sudo mkdir -p ${DEPLOY_DIR}
+            sudo mkdir -p ${{ env.DEPLOY_DIR }}
 
             echo "Extracting artifact..."
-            sudo tar -xzf /tmp/${APP_NAME}.tar.gz -C ${DEPLOY_DIR}
+            sudo tar -xzf /tmp/${{ env.FILE }} -C ${{ env.DEPLOY_DIR }}
 
             echo "Setting permissions..."
-            sudo chmod +x ${DEPLOY_DIR}/${BINARY_NAME}
-            sudo chown -R ${USER}:${USER} ${DEPLOY_DIR}
+            sudo chmod +x ${{ env.DEPLOY_DIR }}/${{ env.BINARY_NAME }}
+            sudo chown -R $USER:$USER ${{ env.DEPLOY_DIR }}
 
-            echo "Stopping existing PM2 process..."
-            pm2 delete ${APP_NAME} || true
-
-            echo "Starting new version..."
-            # PORT=8080 \
-            # DB_USER=${{ secrets.DB_USER }} \
-            # DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
-            # DB_HOST=${{ secrets.DB_HOST }} \
-            # DB_NAME=${{ secrets.DB_NAME }} \
-            pm2 start ${DEPLOY_DIR}/${BINARY_NAME} --name ${APP_NAME}
+            echo "Starting or restarting PM2 process..."
+            if pm2 describe ${{ env.APP_NAME }} > /dev/null; then
+              pm2 restart ${{ env.APP_NAME }}
+            else
+              pm2 start ${{ env.DEPLOY_DIR }}/${{ env.BINARY_NAME }} --name ${{ env.APP_NAME }}
+            fi
 
             echo "Saving PM2..."
             pm2 save
