@@ -106,7 +106,7 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT }}
           source: "go-app.tar.gz"
-          target: "/tmp"
+          target: "/tmp/app"
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -119,14 +119,14 @@ jobs:
             set -e
 
             echo "Creating deploy directory..."
-            sudo mkdir -p ${{ env.DEPLOY_DIR }}
+            # sudo mkdir -p ${{ env.DEPLOY_DIR }}
 
             echo "Extracting artifact..."
-            sudo tar -xzf /tmp/go-app.tar.gz -C ${{ env.DEPLOY_DIR }}
+            tar -xzf /tmp/go-app.tar.gz -C ${{ env.DEPLOY_DIR }}
 
-            echo "Setting permissions..."
-            sudo chmod +x ${{ env.DEPLOY_DIR }}/${{ env.BINARY_NAME }}
-            sudo chown -R $USER:$USER ${{ env.DEPLOY_DIR }}
+            # echo "Setting permissions..."
+            # chmod +x ${{ env.DEPLOY_DIR }}/${{ env.BINARY_NAME }}
+            # chown -R $USER:$USER ${{ env.DEPLOY_DIR }}
 
             echo "Starting or restarting PM2..."
             if pm2 describe ${{ env.APP_NAME }} > /dev/null 2>&1; then
